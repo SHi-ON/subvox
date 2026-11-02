@@ -1,10 +1,10 @@
+import Combine
 import Foundation
-import Observation
 
 /// Cuts the continuous motion stream into word-sized segments, either while Space is held
 /// or automatically when motion energy rises above a calibrated noise floor.
-@MainActor @Observable
-final class CaptureController {
+@MainActor
+final class CaptureController: ObservableObject {
     enum Mode: String, CaseIterable, Identifiable {
         case hold = "Hold Space"
         case auto = "Auto-detect"
@@ -17,26 +17,26 @@ final class CaptureController {
     static let maxAutoSeconds: TimeInterval = 3
     static let maxHoldSeconds: TimeInterval = 6
 
-    var autoEnabled = false {
+    @Published var autoEnabled = false {
         didSet { if !autoEnabled, isCapturing, !isManual { finish() } }
     }
-    var triggerRatio: Double = 3
+    @Published var triggerRatio: Double = 3
 
-    private(set) var isCapturing = false
-    private(set) var isCalibrating = false
-    private(set) var energy: Double = 0
-    private(set) var noiseFloor: Double?
+    @Published private(set) var isCapturing = false
+    @Published private(set) var isCalibrating = false
+    @Published private(set) var energy: Double = 0
+    @Published private(set) var noiseFloor: Double?
 
     var threshold: Double? { noiseFloor.map { $0 * triggerRatio } }
 
     var onSegment: (([MotionSample]) -> Void)?
 
-    @ObservationIgnored private var isManual = false
-    @ObservationIgnored private var buffer: [MotionSample] = []
-    @ObservationIgnored private var preroll: [MotionSample] = []
-    @ObservationIgnored private var calibration: [Double] = []
-    @ObservationIgnored private var calibrationEnd: TimeInterval?
-    @ObservationIgnored private var quietSince: TimeInterval?
+    private var isManual = false
+    private var buffer: [MotionSample] = []
+    private var preroll: [MotionSample] = []
+    private var calibration: [Double] = []
+    private var calibrationEnd: TimeInterval?
+    private var quietSince: TimeInterval?
 
     func begin() {
         guard !isCapturing else { return }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TrainView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @State private var newWord = ""
 
     var body: some View {
@@ -21,8 +21,7 @@ struct TrainView: View {
     }
 
     private var vocabulary: some View {
-        @Bindable var model = model
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             List(selection: $model.selectedWord) {
                 Section("Vocabulary") {
                     ForEach(model.dataset.vocabulary, id: \.self) { word in
@@ -44,9 +43,11 @@ struct TrainView: View {
                 TextField("Add word", text: $newWord)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addWord)
-                Button("Add", systemImage: "plus", action: addWord)
-                    .labelStyle(.iconOnly)
-                    .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(action: addWord) {
+                    Label("Add", systemImage: "plus")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(10)
         }
@@ -61,8 +62,8 @@ struct TrainView: View {
                 title: "Mouth “\(word)”",
                 isCapturing: model.capture.isCapturing,
                 isEnabled: model.selectedWord != nil && model.motion.status == .streaming,
-                onBegin: model.capture.begin,
-                onEnd: model.capture.end)
+                onBegin: { model.capture.begin() },
+                onEnd: { model.capture.end() })
             if model.motion.status != .streaming {
                 Label(model.motion.status.label, systemImage: "airpodspro")
                     .font(.caption)
@@ -114,10 +115,12 @@ private struct TakeTile: View {
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .font(.caption)
             }
         }
         .padding(6)
@@ -126,7 +129,7 @@ private struct TakeTile: View {
 }
 
 private struct EvaluationPanel: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         GroupBox("Is there signal? (leave-one-out + permutation test)") {
@@ -155,7 +158,7 @@ private struct EvaluationPanel: View {
 }
 
 private struct FeatureToggle: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     var title: String
     var option: FeatureSet
 
@@ -184,15 +187,20 @@ private struct EvaluationResultView: View {
                 .font(.callout)
                 .foregroundStyle(result.pValue < 0.05 ? .green : .orange)
 
-            Grid(horizontalSpacing: 2, verticalSpacing: 2) {
-                GridRow {
-                    Text("actual ↓ / predicted →").font(.caption2).foregroundStyle(.secondary)
-                    ForEach(result.labels, id: \.self) { Text($0).font(.caption2).lineLimit(1) }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 2) {
+                    Text("actual ↓ / predicted →")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .trailing)
+                    ForEach(result.labels, id: \.self) {
+                        Text($0).font(.caption2).lineLimit(1).frame(minWidth: 36)
+                    }
                 }
                 ForEach(result.labels.indices, id: \.self) { row in
                     let total = max(result.confusion[row].reduce(0, +), 1)
-                    GridRow {
-                        Text(result.labels[row]).font(.caption2).gridColumnAlignment(.trailing)
+                    HStack(spacing: 2) {
+                        Text(result.labels[row]).font(.caption2).frame(width: 130, alignment: .trailing)
                         ForEach(result.labels.indices, id: \.self) { col in
                             let count = result.confusion[row][col]
                             Text("\(count)")
@@ -209,9 +217,9 @@ private struct EvaluationResultView: View {
 
     private var verdict: String {
         if result.pValue < 0.05 {
-            "Motion carries word information beyond chance across \(result.templateCount) takes."
+            return "Motion carries word information beyond chance across \(result.templateCount) takes."
         } else {
-            "Not distinguishable from chance yet — record more takes or try other feature sets."
+            return "Not distinguishable from chance yet — record more takes or try other feature sets."
         }
     }
 

@@ -1,6 +1,6 @@
 import AVFoundation
+import Combine
 import CoreAudio
-import Observation
 
 /// Fans microphone buffers out to consumers (speech recognizer, session recorder) on the
 /// audio render thread. Consumers must be cheap and thread-safe.
@@ -43,15 +43,15 @@ final class AudioSink: @unchecked Sendable {
     }
 }
 
-@MainActor @Observable
-final class AudioService {
-    private(set) var isRunning = false
-    private(set) var level: Float = 0
-    private(set) var devices: [AudioDevices.Device] = []
-    private(set) var activeDeviceName: String?
-    private(set) var error: String?
+@MainActor
+final class AudioService: ObservableObject {
+    @Published private(set) var isRunning = false
+    @Published private(set) var level: Float = 0
+    @Published private(set) var devices: [AudioDevices.Device] = []
+    @Published private(set) var activeDeviceName: String?
+    @Published private(set) var error: String?
     /// `nil` means "system default input".
-    var selectedDeviceID: AudioDeviceID? {
+    @Published var selectedDeviceID: AudioDeviceID? {
         didSet {
             guard oldValue != selectedDeviceID, isRunning else { return }
             stop()
@@ -59,8 +59,8 @@ final class AudioService {
         }
     }
 
-    @ObservationIgnored let sink = AudioSink()
-    @ObservationIgnored private var engine: AVAudioEngine?
+    let sink = AudioSink()
+    private var engine: AVAudioEngine?
 
     func refreshDevices() {
         devices = AudioDevices.inputDevices()

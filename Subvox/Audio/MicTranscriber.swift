@@ -1,23 +1,23 @@
 import AVFoundation
-import Observation
+import Combine
 import Speech
 
 /// Continuous speech-to-text from the microphone. Used as the reference ("ground truth")
 /// next to the motion decoder, and to test whether whispering is enough for input.
-@MainActor @Observable
-final class MicTranscriber {
-    private(set) var isRunning = false
-    private(set) var text = ""
-    private(set) var isOnDevice = false
-    private(set) var error: String?
+@MainActor
+final class MicTranscriber: ObservableObject {
+    @Published private(set) var isRunning = false
+    @Published private(set) var text = ""
+    @Published private(set) var isOnDevice = false
+    @Published private(set) var error: String?
 
-    @ObservationIgnored private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    @ObservationIgnored private let box = RequestBox()
-    @ObservationIgnored private var task: SFSpeechRecognitionTask?
-    @ObservationIgnored private var sinkID: UUID?
-    @ObservationIgnored private weak var sink: AudioSink?
-    @ObservationIgnored private var finalized = ""
-    @ObservationIgnored private var generation = 0
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private let box = RequestBox()
+    private var task: SFSpeechRecognitionTask?
+    private var sinkID: UUID?
+    private weak var sink: AudioSink?
+    private var finalized = ""
+    private var generation = 0
 
     func start(sink: AudioSink) async {
         guard !isRunning else { return }
@@ -62,7 +62,7 @@ final class MicTranscriber {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        request.addsPunctuation = true
+        if #available(macOS 13, *) { request.addsPunctuation = true }
         isOnDevice = recognizer.supportsOnDeviceRecognition
         request.requiresOnDeviceRecognition = isOnDevice
         box.set(request)
@@ -81,7 +81,7 @@ final class MicTranscriber {
             text = finalized
             // Recognition tasks end on silence/timeout; keep listening with a fresh one.
             Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(failed ? 500 : 50))
+                try? await Task.sleep(nanoseconds: failed ? 500_000_000 : 50_000_000)
                 self?.startTask()
             }
         }
@@ -94,8 +94,9 @@ final class MicTranscriber {
             let partial = result?.bestTranscription.formattedString
             let isFinal = result?.isFinal ?? false
             let failed = error != nil
-            Task { @MainActor in
-                owner?.handle(generation: generation, partial: partial, isFinal: isFinal, failed: failed)
+            Task { @MainActor [weak owner] in
+                guard let owner else { return }
+                owner.handle(generation: generation, partial: partial, isFinal: isFinal, failed: failed)
             }
         }
     }

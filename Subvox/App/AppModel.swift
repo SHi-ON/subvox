@@ -1,5 +1,5 @@
 import AppKit
-import Observation
+import Combine
 
 struct DecodedWord: Identifiable, Hashable {
     let id = UUID()
@@ -7,8 +7,8 @@ struct DecodedWord: Identifiable, Hashable {
     var text: String { prediction.best?.label ?? "?" }
 }
 
-@MainActor @Observable
-final class AppModel {
+@MainActor
+final class AppModel: ObservableObject {
     enum Screen: String, CaseIterable, Identifiable {
         case sensors = "Sensors"
         case train = "Train"
@@ -16,9 +16,9 @@ final class AppModel {
         var id: String { rawValue }
         var symbol: String {
             switch self {
-            case .sensors: "waveform.path.ecg"
-            case .train: "square.stack.3d.up"
-            case .decode: "text.bubble"
+            case .sensors: return "waveform.path.ecg"
+            case .train: return "square.stack.3d.up"
+            case .decode: return "text.bubble"
             }
         }
     }
@@ -29,38 +29,43 @@ final class AppModel {
     let capture = CaptureController()
     let recorder = SessionRecorder()
 
-    var screen: Screen = .train {
+    @Published var screen: Screen = .train {
         didSet { syncCaptureMode() }
     }
 
     // MARK: Training
 
-    private(set) var dataset = TemplateStore.load()
-    var selectedWord: String?
-    var featureSet: FeatureSet = .all {
+    @Published private(set) var dataset = TemplateStore.load()
+    @Published var selectedWord: String?
+    @Published var featureSet: FeatureSet = .all {
         didSet { rebuildClassifier() }
     }
-    private(set) var classifier: TemplateClassifier?
-    private(set) var evaluation: Evaluation?
-    private(set) var isEvaluating = false
-    private(set) var lastTemplateID: Template.ID?
+    @Published private(set) var classifier: TemplateClassifier?
+    @Published private(set) var evaluation: Evaluation?
+    @Published private(set) var isEvaluating = false
+    @Published private(set) var lastTemplateID: Template.ID?
 
     // MARK: Decoding
 
-    var decodeMode: CaptureController.Mode = .hold {
+    @Published var decodeMode: CaptureController.Mode = .hold {
         didSet { syncCaptureMode() }
     }
-    var maxDistance: Double = 1.5
-    var minConfidence: Double = 0.05
-    private(set) var decoded: [DecodedWord] = []
-    private(set) var lastSegment: [MotionSample] = []
+    @Published var maxDistance: Double = 1.5
+    @Published var minConfidence: Double = 0.05
+    @Published private(set) var decoded: [DecodedWord] = []
+    @Published private(set) var lastSegment: [MotionSample] = []
 
-    @ObservationIgnored private var keyMonitor: Any?
-    @ObservationIgnored private var started = false
+    private var keyMonitor: Any?
+    private var started = false
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         selectedWord = dataset.vocabulary.first
         rebuildClassifier()
+        // Views observe only this model, so forward nested changes to refresh them.
+        for publisher in [motion.objectWillChange, audio.objectWillChange, transcriber.objectWillChange, capture.objectWillChange, recorder.objectWillChange] {
+            publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        }
     }
 
     func start() {
@@ -105,18 +110,19 @@ final class AppModel {
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard event.keyCode == 49 else { return event }
+            // Let text fields keep the space bar.
+            if NSApp.keyWindow?.firstResponder is NSText { return event }
             let isDown = event.type == .keyDown
             let isRepeat = isDown && event.isARepeat
-            let consumed = MainActor.assumeIsolated { () -> Bool in
-                guard let self, self.spaceCapturesMotion else { return false }
+            Task { @MainActor [weak self] in
+                guard let self, self.spaceCapturesMotion else { return }
                 if !isDown {
                     self.capture.end()
                 } else if !isRepeat {
                     self.capture.begin()
                 }
-                return true
             }
-            return consumed ? nil : event
+            return nil
         }
     }
 
@@ -177,12 +183,12 @@ final class AppModel {
         isEvaluating = true
         let templates = dataset.templates
         let featureSet = featureSet
-        Task {
+        Task { @MainActor [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
                 Evaluation.run(templates: templates, featureSet: featureSet)
             }.value
-            self.evaluation = result
-            self.isEvaluating = false
+            self?.evaluation = result
+            self?.isEvaluating = false
         }
     }
 

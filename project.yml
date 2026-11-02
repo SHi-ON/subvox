@@ -2,7 +2,7 @@ name: Subvox
 options:
   bundleIdPrefix: com.joeblau
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "12.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -39,11 +39,22 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joeblau.subvox.tests
         GENERATE_INFOPLIST_FILE: YES
+  SubvoxUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [SubvoxUITests]
+    dependencies:
+      - target: Subvox
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joeblau.subvox.uitests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Subvox:
     build:
       targets:
         Subvox: all
         SubvoxTests: [test]
+        SubvoxUITests: [test]
     test:
-      targets: [SubvoxTests]
+      targets: [SubvoxTests, SubvoxUITests]

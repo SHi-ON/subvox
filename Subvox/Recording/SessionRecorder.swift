@@ -1,5 +1,5 @@
 import AVFoundation
-import Observation
+import Combine
 
 /// Records synchronized motion CSV + microphone audio + labelled segment events for offline
 /// analysis (normal speech vs. whisper vs. silent mouthing).
@@ -9,8 +9,8 @@ import Observation
 ///   audio.caf   — microphone audio (if the mic is running)
 ///   events.csv  — captured segments with their label / prediction
 ///   meta.json   — condition, prompt, clock offsets
-@MainActor @Observable
-final class SessionRecorder {
+@MainActor
+final class SessionRecorder: ObservableObject {
     enum Condition: String, CaseIterable, Identifiable, Codable {
         case normal = "Normal speech"
         case whisper = "Whisper"
@@ -18,45 +18,47 @@ final class SessionRecorder {
         var id: String { rawValue }
         var slug: String {
             switch self {
-            case .normal: "normal"
-            case .whisper: "whisper"
-            case .silent: "silent"
+            case .normal: return "normal"
+            case .whisper: return "whisper"
+            case .silent: return "silent"
             }
         }
     }
 
-    var condition: Condition = .silent
-    var prompt = ""
-    private(set) var isRecording = false
-    private(set) var startedAt: Date?
-    private(set) var motionCount = 0
-    private(set) var eventCount = 0
-    private(set) var lastSessionURL: URL?
-    private(set) var error: String?
+    @Published var condition: Condition = .silent
+    @Published var prompt = ""
+    @Published private(set) var isRecording = false
+    @Published private(set) var startedAt: Date?
+    @Published private(set) var motionCount = 0
+    @Published private(set) var eventCount = 0
+    @Published private(set) var lastSessionURL: URL?
+    @Published private(set) var error: String?
 
     static var root: URL {
-        URL.documentsDirectory.appending(path: "Subvox/Sessions", directoryHint: .isDirectory)
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Subvox", isDirectory: true)
+            .appendingPathComponent("Sessions", isDirectory: true)
     }
 
-    @ObservationIgnored private var directory: URL?
-    @ObservationIgnored private var startUptime: TimeInterval = 0
-    @ObservationIgnored private var motionHandle: FileHandle?
-    @ObservationIgnored private var eventsHandle: FileHandle?
-    @ObservationIgnored private var audioWriter: AudioFileWriter?
-    @ObservationIgnored private var sinkID: UUID?
-    @ObservationIgnored private weak var sink: AudioSink?
-    @ObservationIgnored private var audioDeviceName: String?
+    private var directory: URL?
+    private var startUptime: TimeInterval = 0
+    private var motionHandle: FileHandle?
+    private var eventsHandle: FileHandle?
+    private var audioWriter: AudioFileWriter?
+    private var sinkID: UUID?
+    private weak var sink: AudioSink?
+    private var audioDeviceName: String?
 
     func start(audio: AudioService) {
         guard !isRecording else { return }
         error = nil
         let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
             .replacingOccurrences(of: ":", with: "")
-        let dir = Self.root.appending(path: "\(stamp)-\(condition.slug)", directoryHint: .isDirectory)
+        let dir = Self.root.appendingPathComponent("\(stamp)-\(condition.slug)", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            motionHandle = try Self.makeFile(dir.appending(path: "motion.csv"), header: MotionSample.csvHeader)
-            eventsHandle = try Self.makeFile(dir.appending(path: "events.csv"), header: "start,end,kind,label,confidence")
+            motionHandle = try Self.makeFile(dir.appendingPathComponent("motion.csv"), header: MotionSample.csvHeader)
+            eventsHandle = try Self.makeFile(dir.appendingPathComponent("events.csv"), header: "start,end,kind,label,confidence")
         } catch {
             self.error = error.localizedDescription
             return
@@ -69,7 +71,7 @@ final class SessionRecorder {
         eventCount = 0
 
         if audio.isRunning {
-            let writer = AudioFileWriter(url: dir.appending(path: "audio.caf"))
+            let writer = AudioFileWriter(url: dir.appendingPathComponent("audio.caf"))
             audioWriter = writer
             sink = audio.sink
             sinkID = audio.sink.add { buffer, time in writer.write(buffer, time) }
@@ -104,7 +106,7 @@ final class SessionRecorder {
             "note": "Motion t and audioStartOffsetSeconds are relative to startUptime (seconds since boot).",
         ]
         if let data = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]) {
-            try? data.write(to: directory.appending(path: "meta.json"))
+            try? data.write(to: directory.appendingPathComponent("meta.json"))
         }
         lastSessionURL = directory
         self.directory = nil
@@ -112,7 +114,7 @@ final class SessionRecorder {
 
     func record(_ sample: MotionSample) {
         guard isRecording else { return }
-        motionHandle?.write(Data((sample.csvRow(relativeTo: startUptime) + "\n").utf8))
+        try? motionHandle?.write(contentsOf: Data((sample.csvRow(relativeTo: startUptime) + "\n").utf8))
         motionCount += 1
     }
 
@@ -125,14 +127,14 @@ final class SessionRecorder {
             label.replacingOccurrences(of: ",", with: " "),
             confidence.map { String(format: "%.3f", $0) } ?? "",
         ].joined(separator: ",")
-        eventsHandle?.write(Data((row + "\n").utf8))
+        try? eventsHandle?.write(contentsOf: Data((row + "\n").utf8))
         eventCount += 1
     }
 
     private static func makeFile(_ url: URL, header: String) throws -> FileHandle {
         try Data((header + "\n").utf8).write(to: url)
         let handle = try FileHandle(forWritingTo: url)
-        try handle.seekToEnd()
+        _ = try handle.seekToEnd()
         return handle
     }
 }

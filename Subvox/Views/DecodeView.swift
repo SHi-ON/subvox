@@ -3,7 +3,7 @@ import SwiftUI
 /// The "motion → text" screen: segments are classified against the trained vocabulary
 /// and appended to a running transcript, with the mic transcript alongside for comparison.
 struct DecodeView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         ScrollView {
@@ -26,8 +26,7 @@ struct DecodeView: View {
     // MARK: Controls
 
     private var controls: some View {
-        @Bindable var model = model
-        @Bindable var capture = model.capture
+        let capture = model.capture
         return GroupBox {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Segmentation", selection: $model.decodeMode) {
@@ -41,18 +40,20 @@ struct DecodeView: View {
                         title: "Mouth a word",
                         isCapturing: capture.isCapturing,
                         isEnabled: model.classifier != nil && model.motion.status == .streaming,
-                        onBegin: capture.begin,
-                        onEnd: capture.end)
+                        onBegin: { capture.begin() },
+                        onEnd: { capture.end() })
                 } else {
                     autoControls
                 }
 
                 HStack(spacing: 24) {
-                    LabeledContent("Max distance") {
+                    HStack {
+                        Text("Max distance")
                         Slider(value: $model.maxDistance, in: 0.2...4).frame(width: 140)
                         Text(String(format: "%.2f", model.maxDistance)).monospacedDigit().frame(width: 36)
                     }
-                    LabeledContent("Min confidence") {
+                    HStack {
+                        Text("Min confidence")
                         Slider(value: $model.minConfidence, in: 0...0.5).frame(width: 140)
                         Text(String(format: "%.2f", model.minConfidence)).monospacedDigit().frame(width: 36)
                     }
@@ -64,7 +65,7 @@ struct DecodeView: View {
     }
 
     private var autoControls: some View {
-        @Bindable var capture = model.capture
+        let capture = model.capture
         let scaleMax = max((capture.threshold ?? 0.05) * 2, 0.02)
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -85,8 +86,11 @@ struct DecodeView: View {
             LevelMeter(value: capture.energy / scaleMax,
                        marker: capture.threshold.map { $0 / scaleMax },
                        tint: capture.isCapturing ? .red : .blue)
-            LabeledContent("Trigger × floor") {
-                Slider(value: $capture.triggerRatio, in: 1.5...10).frame(width: 160)
+            HStack {
+                Text("Trigger × floor")
+                Slider(value: Binding(
+                    get: { capture.triggerRatio },
+                    set: { capture.triggerRatio = $0 }), in: 1.5...10).frame(width: 160)
                 Text(String(format: "%.1f×", capture.triggerRatio)).monospacedDigit()
             }
             .font(.callout)
@@ -106,7 +110,7 @@ struct DecodeView: View {
                 HStack {
                     Text("Decoded from motion").font(.headline)
                     Spacer()
-                    Button("Clear", action: model.clearDecoded)
+                    Button("Clear") { model.clearDecoded() }
                         .disabled(model.decoded.isEmpty)
                 }
                 if model.decoded.isEmpty {
@@ -177,7 +181,7 @@ struct DecodeView: View {
                         Task { await model.toggleMic() }
                     }
                     LevelMeter(value: Double(model.audio.level))
-                    Button("Clear", action: model.transcriber.clear)
+                    Button("Clear") { model.transcriber.clear() }
                 }
                 Text(model.transcriber.text.isEmpty ? "Whisper or speak to compare against the motion decoder." : model.transcriber.text)
                     .foregroundStyle(model.transcriber.text.isEmpty ? .secondary : .primary)

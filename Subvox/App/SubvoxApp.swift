@@ -2,15 +2,14 @@ import SwiftUI
 
 @main
 struct SubvoxApp: App {
-    @State private var model = AppModel()
+    @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Subvox") {
             ContentView()
-                .environment(model)
+                .environmentObject(model)
                 .frame(minWidth: 980, minHeight: 680)
-                .task { model.start() }
+                .onAppear { model.start() }
         }
-        .windowResizability(.contentMinSize)
     }
 }

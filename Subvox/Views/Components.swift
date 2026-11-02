@@ -88,7 +88,7 @@ struct LevelMeter: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.quaternary)
-                Capsule().fill(tint.gradient)
+                Capsule().fill(tint)
                     .frame(width: geo.size.width * min(max(value, 0), 1))
                 if let marker {
                     Rectangle().fill(.primary)
@@ -116,7 +116,6 @@ struct HoldToCaptureButton: View {
         VStack(spacing: 6) {
             Image(systemName: isCapturing ? "waveform" : "mouth")
                 .font(.system(size: 30, weight: .medium))
-                .symbolEffect(.variableColor.iterative, isActive: isCapturing)
             Text(isCapturing ? "Capturing…" : title)
                 .font(.headline)
             Text("Hold Space or press and hold here")
@@ -162,9 +161,9 @@ struct MotionStatusBadge: View {
 
     private var color: Color {
         switch status {
-        case .streaming: .green
-        case .waiting: .orange
-        default: .red
+        case .streaming: return .green
+        case .waiting: return .orange
+        default: return .red
         }
     }
 }

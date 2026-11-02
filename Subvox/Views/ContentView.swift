@@ -1,20 +1,16 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             List(AppModel.Screen.allCases, selection: screenSelection) { screen in
                 Label(screen.rawValue, systemImage: screen.symbol).tag(screen)
             }
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180)
-        } detail: {
-            switch model.screen {
-            case .sensors: SensorsView()
-            case .train: TrainView()
-            case .decode: DecodeView()
-            }
+            .frame(minWidth: 160, idealWidth: 180, maxWidth: 220)
+            detail
+                .frame(minWidth: 600, maxWidth: .infinity, maxHeight: .infinity)
         }
         .toolbar {
             ToolbarItem(placement: .status) {
@@ -24,7 +20,16 @@ struct ContentView: View {
                 RecordToolbarButton()
             }
         }
-        .navigationTitle(model.screen.rawValue)
+    }
+
+    private var detail: some View {
+        Group {
+            switch model.screen {
+            case .sensors: SensorsView()
+            case .train: TrainView()
+            case .decode: DecodeView()
+            }
+        }
     }
 
     private var screenSelection: Binding<AppModel.Screen?> {
@@ -33,7 +38,7 @@ struct ContentView: View {
 }
 
 private struct RecordToolbarButton: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         let recorder = model.recorder

@@ -2,7 +2,7 @@ import CoreAudio
 import SwiftUI
 
 struct SensorsView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         let motion = model.motion
@@ -37,11 +37,11 @@ struct SensorsView: View {
         let motion = model.motion
         return GroupBox("AirPods motion") {
             VStack(alignment: .leading, spacing: 8) {
-                LabeledContent("Status", value: motion.status.label)
-                LabeledContent("Sample rate", value: String(format: "%.1f Hz", motion.sampleRate))
-                LabeledContent("Samples", value: "\(motion.sampleCount)")
+                labeledRow("Status", value: motion.status.label)
+                labeledRow("Sample rate", value: String(format: "%.1f Hz", motion.sampleRate))
+                labeledRow("Samples", value: "\(motion.sampleCount)")
                 if let s = motion.latest {
-                    LabeledContent("Gravity", value: String(format: "%.2f, %.2f, %.2f", s.gx, s.gy, s.gz))
+                    labeledRow("Gravity", value: String(format: "%.2f, %.2f, %.2f", s.gx, s.gy, s.gz))
                 }
                 if motion.status == .waiting {
                     Text("Put in AirPods Pro and make sure they're the active output on this Mac.")
@@ -54,16 +54,26 @@ struct SensorsView: View {
             .padding(6)
         }
     }
+
+    private func labeledRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+        }
+    }
 }
 
 private struct MicrophoneCard: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        @Bindable var audio = model.audio
+        let audio = model.audio
         GroupBox("Microphone") {
             VStack(alignment: .leading, spacing: 10) {
-                Picker("Input", selection: $audio.selectedDeviceID) {
+                Picker("Input", selection: Binding<AudioDeviceID?>(
+                    get: { audio.selectedDeviceID },
+                    set: { audio.selectedDeviceID = $0 })) {
                     Text("System default").tag(AudioDeviceID?.none)
                     ForEach(audio.devices) { device in
                         Text(device.name).tag(Optional(device.id))
@@ -73,8 +83,10 @@ private struct MicrophoneCard: View {
                     Button(audio.isRunning ? "Stop Mic" : "Start Mic") {
                         Task { await model.toggleMic() }
                     }
-                    Button("Refresh", systemImage: "arrow.clockwise") { audio.refreshDevices() }
-                        .labelStyle(.iconOnly)
+                    Button(action: { audio.refreshDevices() }) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .labelStyle(.iconOnly)
                     LevelMeter(value: Double(audio.level))
                 }
                 if let name = audio.activeDeviceName {
@@ -94,20 +106,24 @@ private struct MicrophoneCard: View {
 }
 
 private struct RecordingCard: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        @Bindable var recorder = model.recorder
+        let recorder = model.recorder
         GroupBox("Experiment recording") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Picker("Condition", selection: $recorder.condition) {
+                    Picker("Condition", selection: Binding<SessionRecorder.Condition>(
+                        get: { recorder.condition },
+                        set: { recorder.condition = $0 })) {
                         ForEach(SessionRecorder.Condition.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .disabled(recorder.isRecording)
                 }
-                TextField("Prompt / what you're saying (e.g. “yes no yes stop”)", text: $recorder.prompt)
+                TextField("Prompt / what you're saying (e.g. “yes no yes stop”)", text: Binding(
+                    get: { recorder.prompt },
+                    set: { recorder.prompt = $0 }))
                     .textFieldStyle(.roundedBorder)
                 HStack {
                     Button {
